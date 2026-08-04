@@ -92,6 +92,7 @@ extern const uint16 priMAC[3];
 extern const uint16 secMAC[3];
 
 void ec_setupheader(void *p);
+int ecx_createsock(int *psock, const char *ifname);
 int ecx_setupnic(ecx_portt *port, const char *ifname, int secondary);
 int ecx_closenic(ecx_portt *port);
 void ecx_setbufstat(ecx_portt *port, uint8 idx, int bufstat);

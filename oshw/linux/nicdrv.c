@@ -83,6 +83,45 @@ static void ecx_clear_rxbufstat(int *rxbufstat)
    }
 }
 
+#ifdef SOEM_CREATESOCK_HOOK
+int SOEM_CREATESOCK_HOOK(int *psock, const char *ifname);
+#endif
+
+int ecx_createsock(int *psock, const char *ifname)
+{
+   int i;
+   int r, ifindex;
+   struct ifreq ifr;
+   struct sockaddr_ll sll;
+
+   /* we use RAW packet socket, with packet type ETH_P_ECAT */
+   *psock = socket(PF_PACKET, SOCK_RAW, htons(ETH_P_ECAT));
+   if (*psock < 0)
+      return -1;
+
+   r = 0;
+   i = 1;
+   r |= setsockopt(*psock, SOL_SOCKET, SO_DONTROUTE, &i, sizeof(i));
+   /* connect socket to NIC by name */
+   strcpy(ifr.ifr_name, ifname);
+   r |= ioctl(*psock, SIOCGIFINDEX, &ifr);
+   ifindex = ifr.ifr_ifindex;
+   strcpy(ifr.ifr_name, ifname);
+   ifr.ifr_flags = 0;
+   /* reset flags of NIC interface */
+   r |= ioctl(*psock, SIOCGIFFLAGS, &ifr);
+   /* set flags of NIC interface, here promiscuous and broadcast */
+   ifr.ifr_flags = ifr.ifr_flags | IFF_PROMISC | IFF_BROADCAST;
+   r |= ioctl(*psock, SIOCSIFFLAGS, &ifr);
+   /* bind socket to protocol, in this case RAW EtherCAT */
+   sll.sll_family = AF_PACKET;
+   sll.sll_ifindex = ifindex;
+   sll.sll_protocol = htons(ETH_P_ECAT);
+   r |= bind(*psock, (struct sockaddr *)&sll, sizeof(sll));
+
+   return r;
+}
+
 /** Basic setup to connect NIC to socket.
  * @param[in] port        = port context struct
  * @param[in] ifname      = Name of NIC device, f.e. "eth0"
@@ -92,9 +131,7 @@ static void ecx_clear_rxbufstat(int *rxbufstat)
 int ecx_setupnic(ecx_portt *port, const char *ifname, int secondary)
 {
    int i;
-   int r, rval, ifindex;
-   struct ifreq ifr;
-   struct sockaddr_ll sll;
+   int r, rval;
    int *psock;
    pthread_mutexattr_t mutexattr;
 
@@ -143,30 +180,17 @@ int ecx_setupnic(ecx_portt *port, const char *ifname, int secondary)
       ecx_clear_rxbufstat(&(port->rxbufstat[0]));
       psock = &(port->sockhandle);
    }
-   /* we use RAW packet socket, with packet type ETH_P_ECAT */
-   *psock = socket(PF_PACKET, SOCK_RAW, htons(ETH_P_ECAT));
+
+#ifdef SOEM_CREATESOCK_HOOK
+#define ECX_CREATESOCK SOEM_CREATESOCK_HOOK
+#else
+#define ECX_CREATESOCK ecx_createsock
+#endif
+
+   r = ECX_CREATESOCK(psock, ifname);
    if (*psock < 0)
       return 0;
 
-   r = 0;
-   i = 1;
-   r |= setsockopt(*psock, SOL_SOCKET, SO_DONTROUTE, &i, sizeof(i));
-   /* connect socket to NIC by name */
-   strcpy(ifr.ifr_name, ifname);
-   r |= ioctl(*psock, SIOCGIFINDEX, &ifr);
-   ifindex = ifr.ifr_ifindex;
-   strcpy(ifr.ifr_name, ifname);
-   ifr.ifr_flags = 0;
-   /* reset flags of NIC interface */
-   r |= ioctl(*psock, SIOCGIFFLAGS, &ifr);
-   /* set flags of NIC interface, here promiscuous and broadcast */
-   ifr.ifr_flags = ifr.ifr_flags | IFF_PROMISC | IFF_BROADCAST;
-   r |= ioctl(*psock, SIOCSIFFLAGS, &ifr);
-   /* bind socket to protocol, in this case RAW EtherCAT */
-   sll.sll_family = AF_PACKET;
-   sll.sll_ifindex = ifindex;
-   sll.sll_protocol = htons(ETH_P_ECAT);
-   r |= bind(*psock, (struct sockaddr *)&sll, sizeof(sll));
    /* setup ethernet headers in tx buffers so we don't have to repeat it */
    for (i = 0; i < EC_MAXBUF; i++)
    {
