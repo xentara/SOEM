@@ -99,25 +99,36 @@ int ecx_createsock(int *psock, const char *ifname)
    if (*psock < 0)
       return -1;
 
-   r = 0;
    i = 1;
-   r |= setsockopt(*psock, SOL_SOCKET, SO_DONTROUTE, &i, sizeof(i));
+   r = setsockopt(*psock, SOL_SOCKET, SO_DONTROUTE, &i, sizeof(i));
+   if (r != 0)
+      return r;
+
    /* connect socket to NIC by name */
    strcpy(ifr.ifr_name, ifname);
-   r |= ioctl(*psock, SIOCGIFINDEX, &ifr);
+   r = ioctl(*psock, SIOCGIFINDEX, &ifr);
+   if (r != 0)
+      return r;
+
    ifindex = ifr.ifr_ifindex;
    strcpy(ifr.ifr_name, ifname);
    ifr.ifr_flags = 0;
    /* reset flags of NIC interface */
-   r |= ioctl(*psock, SIOCGIFFLAGS, &ifr);
+   r = ioctl(*psock, SIOCGIFFLAGS, &ifr);
+   if (r != 0)
+      return r;
+
    /* set flags of NIC interface, here promiscuous and broadcast */
    ifr.ifr_flags = ifr.ifr_flags | IFF_PROMISC | IFF_BROADCAST;
-   r |= ioctl(*psock, SIOCSIFFLAGS, &ifr);
+   r = ioctl(*psock, SIOCSIFFLAGS, &ifr);
+   if (r != 0)
+      return r;
+
    /* bind socket to protocol, in this case RAW EtherCAT */
    sll.sll_family = AF_PACKET;
    sll.sll_ifindex = ifindex;
    sll.sll_protocol = htons(ETH_P_ECAT);
-   r |= bind(*psock, (struct sockaddr *)&sll, sizeof(sll));
+   r = bind(*psock, (struct sockaddr *)&sll, sizeof(sll));
 
    return r;
 }
