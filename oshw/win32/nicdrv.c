@@ -74,6 +74,16 @@ static void ecx_clear_rxbufstat(int *rxbufstat)
    }
 }
 
+#ifdef SOEM_CREATESOCK_HOOK
+pcap_t *SOEM_CREATESOCK_HOOK(const char *ifname, char *errbuf);
+#endif
+
+pcap_t *ecx_createsock(const char *ifname, char *errbuf)
+{
+   /* we use pcap socket to send RAW packets in windows user mode*/
+   return pcap_open(ifname, 65536, PCAP_OPENFLAG_PROMISCUOUS | PCAP_OPENFLAG_MAX_RESPONSIVENESS | PCAP_OPENFLAG_NOCAPTURE_LOCAL, -1, NULL, errbuf);
+}
+
 /** Basic setup to connect NIC to socket.
  * @param[in] port        = port context struct
  * @param[in] ifname       = Name of NIC device, f.e. "eth0"
@@ -127,13 +137,21 @@ int ecx_setupnic(ecx_portt *port, const char *ifname, int secondary)
       ecx_clear_rxbufstat(&(port->rxbufstat[0]));
       psock = &(port->sockhandle);
    }
-   /* we use pcap socket to send RAW packets in windows user mode*/
-   *psock = pcap_open(ifname, 65536, PCAP_OPENFLAG_PROMISCUOUS | PCAP_OPENFLAG_MAX_RESPONSIVENESS | PCAP_OPENFLAG_NOCAPTURE_LOCAL, -1, NULL, errbuf);
+
+#ifdef SOEM_CREATESOCK_HOOK
+   *psock = SOEM_CREATESOCK_HOOK(ifname, errbuf);
+   if (NULL == *psock)
+   {
+      return 0;
+   }
+#else
+   *psock = ecx_createsock(ifname, errbuf);
    if (NULL == *psock)
    {
       printf("interface %s could not open with pcap\n", ifname);
       return 0;
    }
+#endif
 
    for (i = 0; i < EC_MAXBUF; i++)
    {
